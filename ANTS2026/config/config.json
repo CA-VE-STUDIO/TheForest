@@ -13,10 +13,10 @@
             "map": "ButtonMapper",
             "auto_start_layers": false,
             "tube_synths": [
-                "lead_synth", 
-                "lead2_synth", 
-                "melody_bells", 
-                "pop_pip"
+                "melody_1",
+                "melody_2",
+                "melody_3",
+                "melody_4"
             ],
             "instruments": {
                 "melody1": "lead_synth",
@@ -28,7 +28,8 @@
                 "melody1": 0.6,
                 "melody2": 0.5,
                 "harmony": 0.5,
-                "background": 0.6
+                "background": 0.8,
+                "button_melody": 0.6
             },
             "broadcast":{
                 "echo_delay_duration": 4.0
@@ -65,7 +66,7 @@
             "melody1": 1.0,
             "melody2": 0.8,
             "harmony": 0.5,
-            "background": 0.3
+            "background": 0.8
         },
         "instruments": {
             "melody1": "xylophone",
