@@ -234,6 +234,152 @@ SC_PARTS = {
         sig = Pan2.ar(formants * env * volume * gate_env * 0.5, pan);
         Out.ar(out, sig);
     })
+    """,
+
+    "melody_1": r"""
+    SynthDef(\melody_1, { |out=0, freq=440, volume=0.55, gate=1|
+        var spc = 0.19, nnotes = 4, clk, seqTrig, f, fr, env, mod, sig, life, lifeTail;
+        clk = Impulse.ar(1 / spc);
+        seqTrig = clk * (PulseCount.ar(clk) < nnotes);
+        f = Demand.ar(seqTrig, 0, Dseq([
+            freq, freq * 2.pow(1/12), freq * 2.pow(4/12), freq * 2.pow(9/12)
+        ], 1));
+        fr = Latch.ar(f, seqTrig);
+        mod = SinOsc.ar(fr * 2.01) * (fr * 0.12);
+        env = EnvGen.ar(Env.perc(0.004, 2), seqTrig);
+        sig = SinOsc.ar(fr + (mod * env)) * env;
+        sig = HPF.ar(sig.tanh, 200);
+        sig = LPF.ar(sig, 7200);
+        lifeTail = (spc * (nnotes - 1)) + 2.15;
+        life = EnvGen.kr(Env([0, 1, 0], [0.002, lifeTail]), 1, doneAction: 2);
+        Out.ar(out, Pan2.ar(sig * volume * life * 1.35, 0.12));
+    })
+    """,
+
+    "melody_2": r"""
+    SynthDef(\melody_2, { |out=0, freq=440, volume=0.55, gate=1, bright=0.28|
+        var f, fr, frSafe, nyq, env, sig, src, life, lifeTail, atk, rel;
+        var gLong = 0.28, gShort = 0.14, c0 = 0.64, c1, c2, c3, c4, lineDur, t, pulseW, seqTrig;
+        atk = 0.003;
+        rel = 0.52;
+        c1 = c0 + gLong;
+        c2 = c1 + gShort;
+        c3 = c2 + gLong;
+        c4 = c3 + gShort;
+        lineDur = c4 + 0.04;
+        t = Line.ar(0, lineDur + 0.15, lineDur + 0.15);
+        pulseW = SampleDur.ir * 8;
+        seqTrig = Trig1.ar(t - c0, pulseW) + Trig1.ar(t - c1, pulseW) + Trig1.ar(t - c2, pulseW) + Trig1.ar(t - c3, pulseW) + Trig1.ar(t - c4, pulseW);
+        f = Demand.ar(seqTrig, 0, Dseq([
+            freq, freq * 2.pow(7/12), freq * 2.pow(9/12), freq * 2.pow(4/12), freq * 2.pow(12/12)
+        ], 1));
+        fr = Latch.ar(f, seqTrig);
+        frSafe = fr.clip(70, 4200);
+        nyq = SampleRate.ir * 0.45;
+        env = EnvGen.ar(Env.perc(atk, rel, curve: -4), seqTrig);
+        src = Pulse.ar(frSafe, LFNoise2.kr(8).range(0.22, 0.48)) * 0.55;
+        sig = CombC.ar(src * env, 0.2, (220 / frSafe.max(80)).clip(0.012, 0.16), -0.35);
+        sig = sig + (src * env * 0.35);
+        sig = LPF.ar(HPF.ar(sig.tanh, 180), 11000);
+        lifeTail = c4 + (rel * 1.05);
+        life = EnvGen.kr(Env([0, 1, 1, 0], [0.002, lifeTail, 0.28]), 1, doneAction: 2);
+        Out.ar(out, Pan2.ar(sig * volume * life * 1.35, -0.06));
+    })
+    """,
+
+    "melody_3": r"""
+    SynthDef(\melody_3, { |out=0, freq=440, volume=0.55, gate=1, bright=0.75|
+        var f, fr, frSafe, nyq, nSlots, slotDur, c0, c1, c2, c3, lineDur, t, pulseW, seqTrig;
+        var env, sweep, hit, zap, fm, blipOsc, bite, sig, pan, life, lifeTail;
+        nSlots = 11;
+        slotDur = 0.058;
+        c0 = 0.02;
+        c1 = 3 * slotDur;
+        c2 = 5 * slotDur;
+        c3 = 8 * slotDur;
+        lineDur = (nSlots * slotDur) + 0.1;
+        t = Line.ar(0, lineDur + 0.15, lineDur + 0.15);
+        pulseW = SampleDur.ir * 20;
+        seqTrig = Trig1.ar(t - c0, pulseW) + Trig1.ar(t - c1, pulseW) + Trig1.ar(t - c2, pulseW) + Trig1.ar(t - c3, pulseW);
+        f = Demand.ar(seqTrig, 0, Dseq([
+            freq, freq * 2.pow(2/12), freq * 2.pow(4/12), freq * 2.pow(7/12)
+        ], 1));
+        fr = Latch.ar(f, seqTrig);
+        sweep = EnvGen.ar(Env([1.42, 0.78], [0.11], \exp), seqTrig);
+        frSafe = (fr * sweep).clip(150, 6200);
+        nyq = SampleRate.ir * 0.45;
+        env = EnvGen.ar(Env.perc(0.0008, 0.16, curve: -3), seqTrig);
+        hit = Trig1.ar(seqTrig, SampleDur.ir * 6);
+        zap = Ringz.ar(hit * WhiteNoise.ar(1.4), frSafe, 0.028) * env * 2.4;
+        fm = SinOsc.ar(
+            frSafe * (2.41 + (bright * 0.35))
+            + (SinOsc.ar(frSafe * (1.17 + (bright * 0.18))) * frSafe * (11 + (bright * 16)) * env)
+        ) * env * 0.65;
+        blipOsc = Blip.ar(frSafe * (1.62 + (bright * 0.25)), 14 + (bright * 22).floor) * env * 0.42;
+        bite = BPF.ar(
+            Pulse.ar(frSafe * (3.9 + (bright * 0.8)), 0.04) * env,
+            (frSafe * (4.6 + (bright * 1.2))).clip(500, min(13000, nyq)),
+            0.07
+        ) * 1.25;
+        sig = zap + fm + blipOsc + bite;
+        sig = (sig * 2.0).tanh;
+        sig = HPF.ar(sig, 320);
+        sig = LPF.ar(sig, min(12500, nyq));
+        pan = Latch.ar(Demand.ar(seqTrig, 0, Dseq([-0.5, 0.45, -0.22, 0.52], 1)), seqTrig);
+        lifeTail = c3 + 0.28;
+        life = EnvGen.kr(Env([0, 1, 1, 0], [0.002, lifeTail, 0.2]), 1, doneAction: 2);
+        Out.ar(out, Pan2.ar(sig * volume * life * 1.35, pan));
+    })
+    """,
+
+    "melody_4": r"""
+    SynthDef(\melody_4, { |out=0, freq=440, volume=0.55, gate=1, bright=0.75|
+        var f, fr, frSafe, nyq, c0, c1, c2, c3, lineDur, t, pulseW, seqTrig;
+        var env, sweep, hit, atk, pipe, plateLo, plateHi, clang, scrape, sig, pan, life, lifeTail;
+        c0 = 0.056;
+        c1 = c0 + 0.236;
+        c2 = c1 + 0.136;
+        c3 = c2 + 0.264;
+        lineDur = c3 + 0.12;
+        t = Line.ar(0, lineDur + 0.36, lineDur + 0.36);
+        pulseW = SampleDur.ir * 20;
+        seqTrig = Trig1.ar(t - c0, pulseW) + Trig1.ar(t - c1, pulseW) + Trig1.ar(t - c2, pulseW) + Trig1.ar(t - c3, pulseW);
+        f = Demand.ar(seqTrig, 0, Dseq([
+            freq, freq * 2.pow(-1/12), freq * 2.pow(-5/12), freq * 2.pow(-11/12)
+        ], 1));
+        fr = Latch.ar(f, seqTrig);
+        sweep = EnvGen.ar(Env([0.74, 1.38], [0.24], \exp), seqTrig);
+        frSafe = (fr * sweep).clip(140, 6200);
+        nyq = SampleRate.ir * 0.45;
+        env = EnvGen.ar(Env.perc(0.0008, 0.34, curve: -3), seqTrig);
+        hit = Trig1.ar(seqTrig, SampleDur.ir * 6);
+        atk = EnvGen.ar(Env.perc(0.001, 0.05), seqTrig);
+        pipe = CombL.ar(
+            SinOsc.ar(frSafe * 0.5) * env * 0.38,
+            0.45,
+            (frSafe.reciprocal * 0.33).clip(0.014, 0.24),
+            0.14
+        ) * 0.95;
+        plateLo = Ringz.ar(hit * 0.85, frSafe * 2.47, 0.1) * env * 2.1;
+        plateHi = Ringz.ar(hit * 0.55, frSafe * 5.11, 0.048) * env * 1.45;
+        clang = (
+            SinOsc.ar(frSafe * 1.02) * SinOsc.ar(frSafe * (3.83 + (bright * 0.65)))
+        ) * env * 0.58;
+        scrape = Formlet.ar(
+            LPF.ar(Saw.ar(frSafe * 0.5) * atk, frSafe * 1.4),
+            frSafe * (2.15 + (bright * 0.45)),
+            0.0028,
+            0.16
+        ) * env * 0.85;
+        sig = pipe + plateLo + plateHi + clang + scrape;
+        sig = (sig * 2.0).tanh;
+        sig = HPF.ar(sig, 260);
+        sig = LPF.ar(sig, min(11800, nyq));
+        pan = Latch.ar(Demand.ar(seqTrig, 0, Dseq([0.48, -0.38, 0.28, -0.52], 1)), seqTrig);
+        lifeTail = c3 + 0.6;
+        life = EnvGen.kr(Env([0, 1, 1, 0], [0.002, lifeTail, 0.44]), 1, doneAction: 2);
+        Out.ar(out, Pan2.ar(sig * volume * life * 1.35, pan));
+    })
     """
 }
 

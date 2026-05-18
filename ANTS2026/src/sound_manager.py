@@ -16,6 +16,10 @@ from sc_synths import *
 
 add_sc_extensions()
 
+# Button-triggered gesture synths (see sc_synths melody_1..4)
+BUTTON_MELODY_SYNTHS = ("melody_1", "melody_2", "melody_3", "melody_4")
+BUTTON_MELODY_PLAY_SECS = 2.8
+
 class InstrumentManager:
 
     def __init__(self, session):
@@ -195,7 +199,7 @@ class Composer:
         # duration_multiplier = self.shared_state["melody_speed_multipler"]
         if delay > 0:
             wait(delay) # If received a delay before playing note
-        instrument.play_note(note, volume, 0.25, blocking=True)
+        instrument.play_note(note, volume, 1.0, blocking=True)
 
     def fork_button_synth(self, synth_name):
         # Reuse one SCAMP part per button synth to avoid churn.
@@ -207,10 +211,17 @@ class Composer:
                 self.button_instruments[synth_name] = self.session.new_part(synth_name)
 
         instr = self.button_instruments[synth_name]
-        # Prefer per-synth volume if provided, otherwise fall back to melody1.
-        volume = self.state["volume"].get(synth_name, self.state["volume"]["melody1"])
-        # Trigger it with a dummy note (60) since these synths often ignore freq
-        instr.play_note(60, volume, 1.0, blocking=True)
+        if synth_name in BUTTON_MELODY_SYNTHS:
+            volume = self.state["volume"].get(
+                "button_melody",
+                self.state["volume"].get("melody1", 0.6),
+            )
+            length = BUTTON_MELODY_PLAY_SECS
+        else:
+            volume = self.state["volume"].get(synth_name, self.state["volume"]["melody1"])
+            length = 1.0
+        # Pitch 60 = middle C; gestures use internal Demand/Dseq for real notes.
+        instr.play_note(60, volume, length, blocking=False)
 
     def fork_melody1(self, shared_state):
         # Spectral swarm - play bursts periodically
@@ -228,7 +239,7 @@ class Composer:
         volume = self.state["volume"]["melody2"]
         while True:
             # Trigger formant voice (7-second envelope)
-            instrument.play_note(60, volume, 7.0, blocking=False)
+            instrument.play_note(60, volume, 1.0, blocking=False)
             # Wait 5-12 seconds between voices
             wait(random.uniform(5.0, 12.0), units="time")
 
@@ -237,8 +248,7 @@ class Composer:
         instrument = self.instrument_manager.harmony_instrument()
         volume = self.state["volume"]["harmony"]
         while True:
-            # Trigger FM throb (7-second envelope)
-            instrument.play_note(60, volume, 7.0, blocking=False)
+            instrument.play_note(60, volume, 1.0, blocking=False)
             # Wait 8-16 seconds between throbs
             wait(random.uniform(8.0, 16.0), units="time")
 
