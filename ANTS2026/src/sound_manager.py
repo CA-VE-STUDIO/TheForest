@@ -19,6 +19,7 @@ add_sc_extensions()
 # Button-triggered gesture synths (see sc_synths melody_1..4)
 BUTTON_MELODY_SYNTHS = ("melody_1", "melody_2", "melody_3", "melody_4")
 BUTTON_MELODY_PLAY_SECS = 2.8
+TENTACLES = 6
 
 class InstrumentManager:
 
@@ -100,7 +101,8 @@ class Composer:
         self.shared_state = {
             "key": self.mp_manager.Value('s', next(self.key_generator)),
             "chord_levels": self.mp_manager.Value('d', 0),
-            "melody_speed_multipler": 8.0
+            "melody_speed_multipler": 8.0,
+            "pulse_state": {}
         }
 
         self.active_forks = {
@@ -113,6 +115,9 @@ class Composer:
         # Start background immediately - runs continuously
         print("[COMPOSER] Starting background pad")
         self.active_forks["background"] = self.session.fork(self.fork_background, args=(self.shared_state,))
+        for tid in range(1,TENTACLES+1):
+            self.active_forks[f"t{tid}"] = self.session.fork(self.fork_tentacle, args=(self.shared_state,tid,))
+
 
     def update(self, setting_name, value):
 
@@ -171,7 +176,7 @@ class Composer:
     
     def generate_melody_generator(self, key):
         notes = SCALE_TYPES[self.state["melody_scale"]](key)
-        return seprocess.generators.non_repeating_shuffle(list(notes))
+        return seprocess.generators.non_repeating_shuffle(notes)
 
     def play(self):
         if not self.auto_start_layers:
@@ -312,6 +317,65 @@ class Composer:
             wait_time = random.uniform(4.5, 9.0)
             print(f"[BACKGROUND] Waiting {wait_time:.1f}s before next pad")
             wait(wait_time, units="time")
+
+    def fork_tentacle(self, shared_state, tid=1):
+        a = random.uniform(0.1, 0.8)
+        o = Oscillator(tid, activation=a, activation_incr=0.02)
+        shared_state['pulse_state'][tid] = 0
+        
+        # Mystic ambient pad cloud - continuous background (matches background.scd)
+        print(f"[TENTACLE {tid}] Tentacle fork started")
+        instrument = self.instrument_manager.background_instrument()
+        volume = self.state["volume"]["background"]
+        # D2, A2, D3, A3, D4 as MIDI notes (play_note expects pitch, not Hz).
+        pad_notes = [38, 45, 50, 57, 62]
+        
+        while True:
+            o.step(shared_state['pulse_state'])
+
+            if shared_state['pulse_state'][tid] == 1: # oscillator fires    
+                # Pick random MIDI note with subtle detune in semitones.
+                note = random.choice(pad_notes) + random.uniform(-0.08, 0.08)
+                # Spawn single 40-second pad (pan/amplitude randomized in SynthDef)
+                print(f"[TENTACLE {tid}] Playing pad: note={note:.2f}, volume={volume}")
+                instrument.play_note(note, volume, 1.0, blocking=False)    
+        
+            # Irregular spawning timing (1.5-3 bars at 80 BPM = 4.5-9 seconds)
+            wait_time = 2#tid#random.uniform(4.5, 9.0)
+            # print(f"[TENTACLE {tid}] Waiting {wait_time:.1f}s before next pad")
+            wait(wait_time, units="time")
+
+class Oscillator:
+
+    def __init__(self, id, threshold=1, activation=0, activation_incr=0.01):
+        self.id = id
+        self.threshold = threshold # threshold for pulse
+        self.activation = activation
+        self.activation_incr = activation_incr
+        self.count = 0
+
+    # Increases activation
+    def step(self, pulse_state):
+        pulse_state[self.id] = 0
+        self.detect_pulse(pulse_state)
+        self.activation += self.activation_incr
+    
+        if self.activation >= self.threshold:
+            self.pulse(pulse_state)
+            self.activation = 0
+
+        self.count += 1
+
+    def pulse(self, pulse_state):
+        print(f"[OSCILLATOR {self.id}] Pulse at count {self.count}")
+        pulse_state[self.id] = 1
+
+    # If other tentacles output a pulse, this increases activation
+    # Expect an array of 
+    def detect_pulse(self, pulse_state):
+        no_pulses = sum(pulse_state.values())
+        self.activation += no_pulses*self.activation_incr
+
 
 class SoundManager:
     """Manages and schedules sound playback for pillars using the Sonic Pi server."""          
