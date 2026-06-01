@@ -102,7 +102,8 @@ class Composer:
             "key": self.mp_manager.Value('s', next(self.key_generator)),
             "chord_levels": self.mp_manager.Value('d', 0),
             "melody_speed_multipler": 8.0,
-            "pulse_state": {}
+            "pulse_state": {},
+            "phase_state": {}
         }
 
         self.active_forks = {
@@ -319,9 +320,10 @@ class Composer:
             wait(wait_time, units="time")
 
     def fork_tentacle(self, shared_state, tid=1):
-        a = random.uniform(0.1, 0.8)
-        o = Oscillator(tid, activation=a, activation_incr=0.02)
+        phase = random.uniform(0.1, 0.9)
+        o = Oscillator(tid, phase_0=phase, phase_d=0.05, alpha=0.01)
         shared_state['pulse_state'][tid] = 0
+        shared_state['phase_state'][tid] = 0
         
         # Mystic ambient pad cloud - continuous background (matches background.scd)
         print(f"[TENTACLE {tid}] Tentacle fork started")
@@ -331,7 +333,7 @@ class Composer:
         pad_notes = [38, 45, 50, 57, 62]
         
         while True:
-            o.step(shared_state['pulse_state'])
+            o.step(shared_state['pulse_state'], shared_state['phase_state'])
 
             if shared_state['pulse_state'][tid] == 1: # oscillator fires    
                 # Pick random MIDI note with subtle detune in semitones.
@@ -341,40 +343,48 @@ class Composer:
                 instrument.play_note(note, volume, 1.0, blocking=False)    
         
             # Irregular spawning timing (1.5-3 bars at 80 BPM = 4.5-9 seconds)
-            wait_time = 2#tid#random.uniform(4.5, 9.0)
+            wait_time = 1#tid#random.uniform(4.5, 9.0)
             # print(f"[TENTACLE {tid}] Waiting {wait_time:.1f}s before next pad")
             wait(wait_time, units="time")
 
 class Oscillator:
 
-    def __init__(self, id, threshold=1, activation=0, activation_incr=0.01):
+    def __init__(self, id, threshold=1, phase_0=0, phase_d=0.01, alpha=0.01, t_ref=5):
         self.id = id
         self.threshold = threshold # threshold for pulse
-        self.activation = activation
-        self.activation_incr = activation_incr
+        self.phase = phase_0
+        self.phase_d = phase_d
+        self.alpha = alpha # coupling strength
+        self.t_ref = t_ref # refactory period
+        self.wait = 0
         self.count = 0
 
     # Increases activation
-    def step(self, pulse_state):
+    def step(self, pulse_state, phase_state):
         pulse_state[self.id] = 0
-        self.detect_pulse(pulse_state)
-        self.activation += self.activation_incr
+        if self.wait == 0:
+            self.detect_pulse(pulse_state)
+            self.phase += self.phase_d
+        else:
+            self.wait -= 1
     
-        if self.activation >= self.threshold:
+        if self.phase >= self.threshold:
             self.pulse(pulse_state)
-            self.activation = 0
+            self.phase = 0
+            self.wait = self.t_ref
 
         self.count += 1
+        phase_state[self.id] = self.phase
 
     def pulse(self, pulse_state):
         print(f"[OSCILLATOR {self.id}] Pulse at count {self.count}")
         pulse_state[self.id] = 1
 
     # If other tentacles output a pulse, this increases activation
-    # Expect an array of 
+    # Expect a dictionary with {tentacle_id: pulse_state}
     def detect_pulse(self, pulse_state):
         no_pulses = sum(pulse_state.values())
-        self.activation += no_pulses*self.activation_incr
+        self.phase += no_pulses*self.alpha
 
 
 class SoundManager:
