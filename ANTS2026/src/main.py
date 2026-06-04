@@ -5,7 +5,7 @@ import threading
 import queue
 import time
 
-from pillar_hw_interface import Pillar
+from pillar_hw_interface import Pillar, Tentacle
 from mapping_interface import RotationMapper, EventRotationMapper, generate_mapping_interface
 from sound_manager import SoundManager
 from mqtt_manager import MqttPillarClient, MqttPillarClientMock
@@ -54,6 +54,9 @@ class Controller():
         self.num_pillars = len(config["pillars"])        
         self.pillar_config = config["pillars"][hostname]
         self.pillar_manager = Pillar(**self.pillar_config)
+        self.esp_config = config["esp32"]
+        self.esp_manager = Tentacle(**self.esp_config)
+
         self.mapping_interface = generate_mapping_interface(config, self.pillar_config)
         self.sound_manager = SoundManager(hostname, self.pillar_config)
         self.loop_idx = 0
@@ -110,24 +113,24 @@ class Controller():
     
     def loop(self):
 
-        # Get the light state from the Teensy through a Serial read
-        self.pillar_manager.read_from_serial()
+        # Read from the Teensy through Serial
+        self.pillar_manager.read_from_serial_queue()
 
-        # Get button press. NOTE: this is not used for this implementation
+        # Get button press
         current_btn_press = self.pillar_manager.get_all_touch_status()
         # current_btn_press = [0, 0, 0, 0, 0, 0]
 
-        # Update Mapping Interface light state object from Pillar object light statuses as read from Serial
-        for i in range(self.pillar_manager.num_tubes):
-            hue, brightness, _ = self.pillar_manager.get_light_status(i)
-            self.mapping_interface.light_state[i] = (hue, 255, brightness)
-
-        # Generate the lights and notes based on the current btn inputs
+        # Generate the soundscape based on the current btn inputs
         sound_state, light_state = self.mapping_interface.update_pillar(current_btn_press)
         
         # Pass the sound state to the sound manager to activate anything
         for param_name, value in sound_state.items():
             self.sound_manager.update_pillar_setting(param_name, value) 
+
+        # Read from the Esp32 through Serial
+        # self.esp_manager.read_from_serial_queue()
+        tentacle_state = self.esp_manager.get_all_tentacle_status()
+        self.sound_manager.composer.trigger_tentacle_reaction(tentacle_state)
 
         # Send any sound state "reaction notes" to other pillars
         if self.mqtt_enabled:

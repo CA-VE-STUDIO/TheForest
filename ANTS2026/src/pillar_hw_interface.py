@@ -12,90 +12,13 @@ import os
 
 # from MappingInterface import  MappingInterface
 
-def clamp(val, b=0, c=255):
-    return max(b, min(val, c))
-
-def read_serial_data(serial_port, cap_queue, light_queue, kill_event, num_tubes=6):
-    print(f"Serial Read Thread Started With {serial_port}")
-    while True:
-        try:
-
-            if kill_event.is_set():
-                break
-
-            response = serial_port.readline().decode().strip()
-            # print("RECEIVEDDDDD", response)
-            if response.startswith("CAP,") or response.startswith("BUTTONS:"):
-                if response.startswith("CAP,"):
-                    payload = response.split(",", 1)[1]
-                else:
-                    payload = response.split(":", 1)[1]
-
-                status = [token.strip().rstrip(";") for token in payload.split(",") if token.strip()]
-                try:
-                    parsed = [bool(int(i)) for i in status]
-                    print(f"[SERIAL][BUTTONS] raw='{response}' parsed={parsed}")
-                    cap_queue.put(parsed)
-                except ValueError:
-                    print(f"[WARNING] Could not parse button payload: {response}")
-
-            elif response.startswith("LED,") and len(response) >= 10:
-                parts = response.split(",")
-
-                if len(parts) >= num_tubes + 1:
-                    try:
-                        # Process configured number of tubes
-                        for i in range(num_tubes):
-                            hue = int(parts[i + 1])
-                            light_queue.put((i, hue, 255))
-                        print(f"[LED] Valid LED data received: {response[:20]}")
-                    except (ValueError, IndexError) as e:
-                        print(f"[ERROR] Error processing LED data: {e}")
-
-        except Exception as e:
-            pass
-            # print(f"Error reading data: {e}")
-
-    print("Serial Read Thread Killed")
-
-def write_serial_data(serial_port, write_queue):
-    print(f"Serial Write Thread Started With {serial_port}")
-    while True:
-        try:
-            packet = write_queue.get()
-
-            if "kill" in packet:
-                # Method of killing the packet
-                break
-
-            # print("Packet Sending", packet)
-            serial_port.write(packet.encode())
-        except Exception as e:
-            print(f"Error writing data: {e}")
-        time.sleep(0.1)
-
-    print("Serial Write Thread Killed")
-
-class Pillar():
+class SerialManager():
 
     def __init__(self, id, port, baud_rate=9600, **kwargs):
         self.id = id
 
-        # self.mapping = MappingInterface(copy.deepcopy(kwargs))
-        # Print all elements of the mapping object
-        #print(f"Mapping Interface: {self.mapping.__dict__}")
-
         self.serial_read_rate = 10
-
-        self.num_tubes = kwargs.get("num_tubes", 6)
-        self.num_touch_sensors = kwargs.get("num_tubes", 6)
-        self.touch_status = [False for _ in range(self.num_touch_sensors)]
-        self.previous_received_status = []
-
-        self.light_status = [(0, 0, 0) for _ in range(self.num_tubes)]
-
-        self.cap_queue = queue.Queue()
-        self.light_queue = queue.Queue()
+        self.data_queue = queue.Queue()
         self.write_queue = queue.Queue()
 
         self.kill_read_thread = threading.Event()
@@ -137,13 +60,13 @@ class Pillar():
 
         self.kill_read_thread = threading.Event()
         self.serial_thread = threading.Thread(
-            target=read_serial_data,
-            args=(self.ser, self.cap_queue, self.light_queue, self.kill_read_thread, self.num_tubes),
+            target=self.read_serial_data,
+            args=(self.ser, self.data_queue, self.kill_read_thread),
         )
         self.serial_thread.daemon = True
         self.serial_thread.start()
 
-        self.serial_write_thread = threading.Thread(target=write_serial_data, args=(self.ser, self.write_queue,))
+        self.serial_write_thread = threading.Thread(target=self.write_serial_data, args=(self.ser, self.write_queue,))
         self.serial_write_thread.daemon = True
         self.serial_write_thread.start()
 
@@ -161,59 +84,52 @@ class Pillar():
             touch_status=self.touch_status, light_status=self.light_status, serial_status=self.serial_status
         )
 
+    def clamp(self, val, b=0, c=255):
+        return max(b, min(val, c))
+
+    def read_serial_data(self, serial_port, data_queue, kill_event):
+        # This needs implementation in child classes
+        return
+
+    def write_serial_data(self, serial_port, write_queue):
+        print(f"Serial Write Thread Started With {serial_port}")
+        while True:
+            try:
+                packet = write_queue.get()
+
+                if "kill" in packet:
+                    # Method of killing the packet
+                    break
+
+                # print("Packet Sending", packet)
+                serial_port.write(packet.encode())
+            except Exception as e:
+                print(f"Error writing data: {e}")
+            time.sleep(0.1)
+
+        print("Serial Write Thread Killed")
+
+class Pillar(SerialManager):
+
+    def __init__(self, id, port, baud_rate=9600, **kwargs):
+
+        self.num_tubes = kwargs.get("num_tubes", 6)
+        self.num_touch_sensors = kwargs.get("num_tubes", 6)
+        self.touch_status = [False for _ in range(self.num_touch_sensors)]
+        self.previous_received_status = []
+
+        self.light_status = [(0, 0, 0) for _ in range(self.num_tubes)]
+
+        super().__init__(id, port, baud_rate, **kwargs)
+
     def get_touch_status(self, tube_id):
         return self.touch_status[tube_id]
 
     def get_all_touch_status(self):
         return self.touch_status
 
-    def get_light_status(self, tube_id):
-        return self.light_status[tube_id]
-
-    def get_all_light_status(self):
-        return self.light_status
-
-    def send_light_change(self, tube_id, hue, brightness):
-        """Sends a LED message to change the hue and brightness of an individual tube
-
-        Args:
-            tube_id (int): The tube id of the tube to change
-            hue (int): [0, 255] the value of the hue
-            brightness (int): [0, 255] the value of the brightness
-
-        This sends a LED,{tube_id},{hue},{brightness}; message to the serial port
-        for a connected arduino to deal with.
-
-        *HOWEVER* note that this message cannot be sent in quick succession without
-        delays in between sends. The serial/message read seems to struggle to pick
-        out all of the individual messages. In a case where you need to send all please
-        use the `send_all_light_chanege` function.
-
-        """
-        assert tube_id < self.num_tubes
-        assert 0 <= hue <= 255
-        assert 0 <= brightness <= 255
-        message = f"LED,{tube_id},{hue},{brightness};\n\r"
-        #print("Pushing to queue", message)
-        self.write_queue.put(message)
-
-    def send_all_light_change(self, lights):
-        """Send all the lights in one go
-
-        This uses the ALLLED message
-        ALLLED,h1,b1,...,hn,bn;
-
-        Argument lights assumed to be a list of tuples (hue, brightness)
-        """
-        light_list = []
-        for i, l in enumerate(lights):
-            hue = clamp(l[0])
-            bright = clamp(l[1])
-            light_list.extend([str(hue), str(bright), str(0)])
-        message = f"ALLLED,{','.join(light_list)};"
-        # print(f'Message being sent: {message}')
-        self.write_queue.empty()
-        self.write_queue.put(message)
+    # def get_light_status(self, tube_id):
+    #     return self.light_status[tube_id]
 
     def set_touch_status(self, touch_status):
         # Do the filter here
@@ -224,11 +140,41 @@ class Pillar():
     def set_touch_status_tube(self, tube_id, status):
         self.touch_status[tube_id] = bool(status)
 
-    def read_from_serial(self):
+    def read_serial_data(self, serial_port, data_queue, kill_event):
+        print(f"Serial Read Thread Started With {serial_port}")
+        while True:
+            try:
+
+                if kill_event.is_set():
+                    break
+
+                response = serial_port.readline().decode().strip()
+                # print("RECEIVEDDDDD", response)
+                if response.startswith("CAP,") or response.startswith("BUTTONS:"):
+                    if response.startswith("CAP,"):
+                        payload = response.split(",", 1)[1]
+                    else:
+                        payload = response.split(":", 1)[1]
+
+                    status = [token.strip().rstrip(";") for token in payload.split(",") if token.strip()]
+                    try:
+                        parsed = [bool(int(i)) for i in status]
+                        # print(f"[SERIAL][BUTTONS] raw='{response}' parsed={parsed}")
+                        data_queue.put(parsed)
+                    except ValueError:
+                        print(f"[WARNING] Could not parse button payload: {response}")
+
+            except Exception as e:
+                pass
+                # print(f"Error reading data: {e}")
+
+        print("Serial Read Thread Killed")
+
+    def read_from_serial_queue(self):
         # Handle touch sensor data
         try:
-            while not self.cap_queue.empty():
-                received_status = self.cap_queue.get_nowait()
+            while not self.data_queue.empty():
+                received_status = self.data_queue.get_nowait()
 
                 # Ensure received_status has the correct length
                 if len(received_status) != self.num_touch_sensors:
@@ -247,7 +193,7 @@ class Pillar():
 
                 # Only update and print if status changed
                 if received_status != previous_status:
-                    print(f"[TOUCH] Processing touch status: {received_status}")
+                    # print(f"[TOUCH] Processing touch status: {received_status}")
                     self.set_touch_status(received_status)
                     # Thread-safe update of previous status
                     with self.status_lock:
@@ -259,47 +205,8 @@ class Pillar():
         except Exception as e:
             print(f"[ERROR] Error processing touch data: {e}")
 
-        # Handle LED status data
-        try:
-            while not self.light_queue.empty():
-                led_data = self.light_queue.get_nowait()
-
-                # Format from the queue should be (tube_id, hue, brightness)
-                tube_id, hue, brightness = led_data
-
-                # Validate tube_id is in range
-                if 0 <= tube_id < self.num_tubes:
-                    # Thread-safe update of light status
-                    with self.status_lock:
-                        # Store as (hue, brightness, effect) - THIS IS THE IMPORTANT FORMAT
-                        self.light_status[tube_id] = (hue, brightness, 0)
-                    print(f"[LED] Updated light status for tube {tube_id}: hue={hue}, brightness={brightness}")
-                else:
-                    print(f"[WARNING] LED tube_id {tube_id} out of range (0-{self.num_tubes - 1})")
-        except queue.Empty:
-            pass
-        except Exception as e:
-            print(f"[ERROR] Error processing light queue: {e}")
-
     def reset_touch_status(self):
         self.touch_status = [0 for _ in range(self.num_touch_sensors)]
-
-    def read_from_serial_old(self):
-        # Existing implementation...
-        # print("Reading from serial")
-        try:
-            while not self.cap_queue.empty():
-                # print("HELLLOOOOOO")
-                received_status = self.cap_queue.get_nowait()
-                # print("Receiving", received_status)
-                if received_status != self.previous_received_status:
-                    self.set_touch_status(received_status)
-                    # Assuming a function to handle end of touch event
-                    self.handle_end_of_touch(received_status)
-                self.previous_received_status = received_status
-        except queue.Empty:
-            # print("Queue Empty")
-            pass
 
     def handle_end_of_touch(self, received_status):
         if all(status == 0 for status in received_status):  # All touch sensors are inactive
@@ -312,3 +219,66 @@ class Pillar():
         # Placeholder for actual WebSocket sending logic
         # send_to_all_clients(reset_message)  # You need to implement this based on your WebSocket setup
         
+
+# Reads from serial port: format is {id:value}
+class Tentacle(SerialManager):
+
+    def __init__(self, id, port, baud_rate=9600, **kwargs):
+
+        self.num_tentacles = kwargs.get("num_tentacles", 5)
+        self.msg_len = kwargs.get("msg_len", 9)
+        self.tentacle_status = [0 for _ in range(self.num_tentacles)]
+
+        super().__init__(id, port, baud_rate, **kwargs)
+
+    def read_serial_data(self, serial_port, data_queue, kill_event):
+        print(f"Serial Read Thread Started With {serial_port}")
+        while True:
+            try:
+                if kill_event.is_set():
+                    break
+
+                response = serial_port.read(self.msg_len).decode().strip()
+                r_ = response.split(':')
+                tid = int(r_[0])
+                val = int(r_[1])
+                self.tentacle_status[tid] = val
+                
+                # data_queue.put(self.tentacle_status)
+
+            except Exception as e:
+                pass
+                # print(f"Error reading data: {e}")
+
+        print("Serial Read Thread Killed")
+
+    def get_all_tentacle_status(self):
+        return self.tentacle_status
+
+    # def read_from_serial_queue(self):
+    #     # Read and parse esp32 data
+    #     try:
+    #         while not self.data_queue.empty():
+    #             data = self.data_queue.get_nowait()
+    #             print("[TENTACLE STATUS] ", data)
+
+    #             if len(data) != self.num_tentacles:
+    #                 pass
+
+                # # Get a thread-safe copy of the previous status
+                # with self.status_lock:
+                #     previous_status = self.previous_received_status.copy() if self.previous_received_status else []
+
+                # # Only update and print if status changed
+                # if received_status != previous_status:
+                #     # print(f"[TOUCH] Processing touch status: {received_status}")
+                #     self.set_touch_status(received_status)
+                #     # Thread-safe update of previous status
+                #     with self.status_lock:
+                #         self.previous_received_status = received_status.copy()
+                #     # Handle end of touch event
+                #     self.handle_end_of_touch(received_status)
+        # except queue.Empty:
+        #     pass
+        # except Exception as e:
+        #     print(f"[ERROR] Error processing touch data: {e}")

@@ -77,6 +77,7 @@ class InstrumentManager:
     def background_instrument(self):
         return self.instruments["background"]
 
+
 class Composer:
 
     def __init__(self, session, initial_state):
@@ -103,7 +104,8 @@ class Composer:
             "chord_levels": self.mp_manager.Value('d', 0),
             "melody_speed_multipler": 8.0,
             "pulse_state": {},
-            "phase_state": {}
+            "phase_state": {},
+            "enhance_t": 0
         }
 
         self.active_forks = {
@@ -112,10 +114,12 @@ class Composer:
             "harmony": None,
             "background": None
         }
+
+        self.button_forks = 0
         
         # Start background immediately - runs continuously
         print("[COMPOSER] Starting background pad")
-        # self.active_forks["background"] = self.session.fork(self.fork_background, args=(self.shared_state,))
+        self.active_forks["background"] = self.session.fork(self.fork_background, args=(self.shared_state,))
         for tid in range(1,TENTACLES+1):
             self.active_forks[f"t{tid}"] = self.session.fork(self.fork_tentacle, args=(self.shared_state,tid,))
 
@@ -147,7 +151,18 @@ class Composer:
                     if isinstance(note, dict) and "synth" in note:
                         # Handle ButtonMapper triggers
                         print(f"[COMPOSER] dispatch button synth='{note['synth']}'")
-                        self.session.fork(self.fork_button_synth, args=(note["synth"],))
+                        # Set a time duration for enhanced synth
+                        self.shared_state["enhance_t"] = 1000
+
+                        # if note['synth'] not in self.button_instruments:
+                        #     if note['synth'] in SC_PARTS:
+                        #         self.button_instruments[note['synth']] = create_supercollider_synth(self.session, note['synth'])
+                        #     else:
+                        #         self.button_instruments[note['synth']] = self.session.new_part(note['synth'])
+
+                        if self.button_forks < 5:
+                            self.session.fork(self.fork_button_synth, args=(self.shared_state,))
+                            self.button_forks += 1
                     else:
                         print(f"[COMPOSER] dispatch melody note={note}")
                         self.session.fork(self.fork_melody_single_note, args=(note,))
@@ -170,6 +185,13 @@ class Composer:
     def update_chord_leve(self, level):
         self.shared_state["chord_levels"].value += level
 
+    def trigger_tentacle_reaction(self, tentacle_state):
+        for tid, v in enumerate(tentacle_state):
+            # Only trigger if a fork is not currently active and if value is above threshold
+            if (tid not in self.active_forks or self.active_forks[tid] is False) and v > 5:
+                self.active_forks[tid] = True
+                self.session.fork(self.fork_beep_boop_synth, args=(tid,v,))
+
     def generate_key_generator(self):
         # return seprocess.generators.random_walk(self.all_keys[0], clamp_min=min(self.all_keys), clamp_max=max(self.all_keys))
         circle_fifths = [48 + (i*5) % 12 for i in range(11)]
@@ -180,6 +202,10 @@ class Composer:
         return seprocess.generators.non_repeating_shuffle(notes)
 
     def play(self):
+        # Decrement the count for enhanced synths from button press
+        if self.shared_state["enhance_t"] > 0:
+            self.shared_state["enhance_t"] = max(0,self.shared_state["enhance_t"]-1)
+        
         if not self.auto_start_layers:
             return
         # Start melody/harmony forks on demand (background already running from __init__)
@@ -207,27 +233,32 @@ class Composer:
             wait(delay) # If received a delay before playing note
         instrument.play_note(note, volume, 1.0, blocking=True)
 
-    def fork_button_synth(self, synth_name):
+    def fork_beep_boop_synth(self, tentacle_id, value):
         # Reuse one SCAMP part per button synth to avoid churn.
-        print(f"Button Synth Triggered: {synth_name}")
-        if synth_name not in self.button_instruments:
-            if synth_name in SC_PARTS:
-                self.button_instruments[synth_name] = create_supercollider_synth(self.session, synth_name)
-            else:
-                self.button_instruments[synth_name] = self.session.new_part(synth_name)
+        print(f"Tentacle Synth Triggered: {tentacle_id}")
+        # if synth_name not in self.button_instruments:
+        #     if synth_name in SC_PARTS:
+        #         self.button_instruments[synth_name] = create_supercollider_synth(self.session, synth_name)
+        #     else:
+        #         self.button_instruments[synth_name] = self.session.new_part(synth_name)
 
-        instr = self.button_instruments[synth_name]
-        if synth_name in BUTTON_MELODY_SYNTHS:
-            volume = self.state["volume"].get(
-                "button_melody",
-                self.state["volume"].get("melody1", 0.6),
-            )
-            length = BUTTON_MELODY_PLAY_SECS
-        else:
-            volume = self.state["volume"].get(synth_name, self.state["volume"]["melody1"])
-            length = 1.0
+        # instr = self.button_instruments[synth_name]
+        instr = self.instrument_manager.melody2_instrument()
+        # if synth_name in BUTTON_MELODY_SYNTHS:
+        #     volume = self.state["volume"].get(
+        #         "button_melody",
+        #         self.state["volume"].get("button_melody", 0.6),
+        #     )
+        #     length = BUTTON_MELODY_PLAY_SECS
+        # else:
+        volume = self.state["volume"]["melody2"]
+        length = 1.0
+        
+        pitch = [45, 52, 59, 65, 70]
         # Pitch 60 = middle C; gestures use internal Demand/Dseq for real notes.
-        instr.play_note(60, volume, length, blocking=False)
+        instr.play_note(pitch[tentacle_id], volume, length, blocking=False)
+        wait(4)
+        self.active_forks[tentacle_id] = False
 
     def fork_melody1(self, shared_state):
         # Spectral swarm - play bursts periodically
@@ -249,14 +280,14 @@ class Composer:
             # Wait 5-12 seconds between voices
             wait(random.uniform(5.0, 12.0), units="time")
 
-    def fork_harmony(self, shared_state):        
-        # FM metallic throb - sparse punctuation
-        instrument = self.instrument_manager.harmony_instrument()
+    def fork_button_synth(self, shared_state):
+        instrument = self.instrument_manager.harmony_instrument() #TODO this should be relabelled from harmony...
         volume = self.state["volume"]["harmony"]
-        while True:
+        while shared_state["enhance_t"] > 0:
             instrument.play_note(60, volume, 1.0, blocking=False)
-            # Wait 8-16 seconds between throbs
-            wait(random.uniform(8.0, 16.0), units="time")
+            wait(random.uniform(4.0,8.0), units="time")
+        
+        self.button_forks -= 1
 
     def fork_background(self, shared_state):
         # Mystic ambient pad cloud - continuous background (matches background.scd)
@@ -278,7 +309,7 @@ class Composer:
 
     def fork_tentacle(self, shared_state, tid=1):
         phase = random.uniform(0.1, 0.9)
-        o = Oscillator(tid, phase_0=phase, phase_d=0.05, alpha=0.02)
+        o = Oscillator(tid, phase_0=phase, phase_d=0.05, alpha=0.015)
         shared_state['pulse_state'][tid] = 0
         shared_state['phase_state'][tid] = 0
         
@@ -291,7 +322,7 @@ class Composer:
 
         while True:
             o.step(shared_state['pulse_state'], shared_state['phase_state'])
-        
+
             if shared_state['pulse_state'][tid] == 1: # oscillator fires    
                 # Pick random MIDI note with subtle detune in semitones.
                 note = random.choice(pad_notes) + random.uniform(-0.08, 0.08)
@@ -299,7 +330,7 @@ class Composer:
                 print(f"[TENTACLE {tid}] Playing pad: note={note:.2f}, volume={volume}")
                 instrument.play_note(note, volume, 1.0, blocking=False)    
                 # Add some randomness so notes don't all play at same time from multiple tentacles
-                wait_time = random.uniform(0, 0.1)#tid#random.uniform(4.5, 9.0)
+                wait_time = random.uniform(0, 0.2)#tid#random.uniform(4.5, 9.0)
                 # print(f"[TENTACLE {tid}] Waiting {wait_time:.1f}s before next pad")
                 wait(wait_time, units="time")
         

@@ -18,6 +18,98 @@ SC_PARTS = {
     }, [\ir, 0.1, 0.1, 0.1, 0.1, \kr])
     """,
 
+    "alien_synth": r"""
+    SynthDef(\alien, {
+        |out=0, freq=200, volume=0.2, gate=1|
+
+        var env, carrier, mod, formant, noise, sig, drift;
+
+        // overall shape (keeps it finite)
+        env = EnvGen.ar(
+            Env.asr(0.5, 1, 3),
+            gate,
+            doneAction: 2
+        );
+
+        // slow pitch drift (feels "alive / unhuman")
+        drift = LFNoise1.kr(0.5).range(-0.3, 0.3);
+        freq = freq * (2.pow(drift / 12));
+
+        // chaotic modulator (FM-like instability)
+        mod = SinOsc.ar(
+            freq * LFNoise1.kr(0.3).range(0.5, 2.5)
+        ) * LFNoise1.kr(1.2).range(10, 80);
+
+        carrier = SinOsc.ar(freq + mod);
+
+        // "vocal / alien formant band"
+        formant = BPF.ar(
+            carrier,
+            LFNoise1.kr(0.4).range(300, 3000),
+            LFNoise1.kr(0.2).range(0.05, 0.3)
+        );
+
+        // eerie noise layer (breathing / static)
+        noise = PinkNoise.ar(0.05);
+        noise = BPF.ar(noise, LFNoise1.kr(0.6).range(500, 6000), 0.2);
+
+        // subtle feedback shimmer
+        sig = formant + noise;
+        sig = sig + CombC.ar(sig, 0.3, 0.2, 1.5) * 0.2;
+
+        // final shaping
+        sig = tanh(sig * 2);
+        sig = LPF.ar(sig, 6000);
+
+        Out.ar(out, sig * env * volume ! 2);
+    }).add;
+    """,
+
+    "alien_lang": r"""
+    SynthDef(\alienLang, {
+        |out=0, freq=160, rate=6, volume=0.25, gate=1|
+
+        var env, trig, seq, source, pitch, formant, sig;
+
+        // overall phrase envelope (one utterance)
+        env = EnvGen.ar(
+            Env.asr(0.02, 1, 0.8),
+            gate,
+            doneAction: 2
+        );
+
+        // internal beat trigger (controls syllables)
+        trig = Impulse.kr(rate);
+
+        // changing pitch per beat (like syllables)
+        seq = Demand.kr(
+            trig,
+            0,
+            Dseq([0, 3, -2, 5, 1, -4], inf)
+        );
+
+        pitch = freq * (2.pow(seq / 12));
+
+        // voiced core per beat
+        source = SinOsc.ar(pitch);
+
+        // shifting “alien mouth shapes” per beat
+        formant = BPF.ar(source, LFNoise1.kr(2).range(400, 900), 0.2)
+                + BPF.ar(source, LFNoise1.kr(2).range(1000, 2500), 0.18)
+                + BPF.ar(source, LFNoise1.kr(2).range(2500, 4000), 0.12);
+
+        // syllable shaping (each beat becomes a spoken chunk)
+        sig = formant * Decay2.kr(trig, 0.01, 0.12);
+
+        // tiny alien “air” layer
+        sig = sig + (WhiteNoise.ar(0.01) * trig);
+
+        sig = LPF.ar(sig, 5000);
+
+        Out.ar(out, sig * env * volume ! 2);
+    }).add;
+    """,
+
     "bassHum_beating": r"""
     SynthDef(\bassHum_beating, { |out=0, volume=1.0, freq=36, spread=0.45, drift=0.02, color=0.4, atk=10, rel=40, gate=1|
         var envelope = EnvGen.ar(Env.asr(atk, 1, rel), gate, doneAction: 2);
