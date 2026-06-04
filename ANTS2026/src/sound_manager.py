@@ -115,7 +115,7 @@ class Composer:
         
         # Start background immediately - runs continuously
         print("[COMPOSER] Starting background pad")
-        self.active_forks["background"] = self.session.fork(self.fork_background, args=(self.shared_state,))
+        # self.active_forks["background"] = self.session.fork(self.fork_background, args=(self.shared_state,))
         for tid in range(1,TENTACLES+1):
             self.active_forks[f"t{tid}"] = self.session.fork(self.fork_tentacle, args=(self.shared_state,tid,))
 
@@ -258,49 +258,6 @@ class Composer:
             # Wait 8-16 seconds between throbs
             wait(random.uniform(8.0, 16.0), units="time")
 
-    # def fork_harmony(self, shared_state):
-    #     # current_clock().tempo = self.state["bpm"]["harmony"]
-    #     instrument = self.instrument_manager.harmony_instrument()
-    #     key = next(self.key_generator)
-    #     # print("harmony", key)
-    #     scale = list(SCALE_TYPES[self.state["melody_scale"]](key))
-
-    #     # Add 7/9/11/13 etc depending on chord_levels
-    #     chord_levels = shared_state["chord_levels"].value
-
-    #     chord = []
-    #     gen_chords = [0, 2, 4] + [6 + 2*chord_levels*i for i in range(chord_levels)]
-    #     for offset in gen_chords:
-    #         if offset >= len(scale):
-    #             new_offset = offset % len(scale)
-    #             number_up = offset // len(scale)
-    #             # print(offset, new_offset, number_up)
-    #             note = scale[new_offset] + number_up * 12
-    #         else:
-    #             note = scale[offset]
-    #         chord.append(int(note))
-
-    #     # Adjust voicings
-    #     # print(chord)
-    #     random.shuffle(chord)
-    #     key_idx = chord.index(key)
-    #     chord = np.array(chord)
-    #     chord[key_idx:] += 12 # If some of the chords are below tonic, shift down octave
-    #     # print(chord)
-
-        
-    #     volume = self.state["volume"]["harmony"]
-    #     envelope = expe.envelope.Envelope.from_levels_and_durations(
-    #         [0.1, volume, 1.0], [0.5, 3.0]
-    #     )
-    #     envelope = expe.envelope.Envelope.adsr(0.5, volume, 1.0, 0.2, 0.15, 0.5)
-    #     # instrument.play_chord(chord, envelope, 4.0, blocking=True)
-
-    #     if chord_levels > 0:
-    #         shared_state["chord_levels"].value -= 1
-
-    #     shared_state["key"].value = key
-
     def fork_background(self, shared_state):
         # Mystic ambient pad cloud - continuous background (matches background.scd)
         print("[BACKGROUND] Fork started")
@@ -321,29 +278,33 @@ class Composer:
 
     def fork_tentacle(self, shared_state, tid=1):
         phase = random.uniform(0.1, 0.9)
-        o = Oscillator(tid, phase_0=phase, phase_d=0.05, alpha=0.01)
+        o = Oscillator(tid, phase_0=phase, phase_d=0.05, alpha=0.02)
         shared_state['pulse_state'][tid] = 0
         shared_state['phase_state'][tid] = 0
         
         # Mystic ambient pad cloud - continuous background (matches background.scd)
         print(f"[TENTACLE {tid}] Tentacle fork started")
-        instrument = self.instrument_manager.background_instrument()
-        volume = self.state["volume"]["background"]
+        instrument = self.instrument_manager.melody1_instrument()
+        volume = self.state["volume"]["melody1"]
         # D2, A2, D3, A3, D4 as MIDI notes (play_note expects pitch, not Hz).
-        pad_notes = [38, 45, 50, 57, 62]
-        
+        pad_notes = [38, 45, 50, 57, 62, 73]
+
         while True:
             o.step(shared_state['pulse_state'], shared_state['phase_state'])
-
+        
             if shared_state['pulse_state'][tid] == 1: # oscillator fires    
                 # Pick random MIDI note with subtle detune in semitones.
                 note = random.choice(pad_notes) + random.uniform(-0.08, 0.08)
                 # Spawn single 40-second pad (pan/amplitude randomized in SynthDef)
                 print(f"[TENTACLE {tid}] Playing pad: note={note:.2f}, volume={volume}")
                 instrument.play_note(note, volume, 1.0, blocking=False)    
+                # Add some randomness so notes don't all play at same time from multiple tentacles
+                wait_time = random.uniform(0, 0.1)#tid#random.uniform(4.5, 9.0)
+                # print(f"[TENTACLE {tid}] Waiting {wait_time:.1f}s before next pad")
+                wait(wait_time, units="time")
         
             # Irregular spawning timing (1.5-3 bars at 80 BPM = 4.5-9 seconds)
-            wait_time = 1#tid#random.uniform(4.5, 9.0)
+            wait_time = 2#tid#random.uniform(4.5, 9.0)
             # print(f"[TENTACLE {tid}] Waiting {wait_time:.1f}s before next pad")
             wait(wait_time, units="time")
 

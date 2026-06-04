@@ -183,7 +183,7 @@ SC_PARTS = {
         var numGrains = rrand(5, 10);
         var gate_env = EnvGen.kr(Env.asr(0.005, 1.0, 0.15), gate, doneAction: 2);
         var sig = Mix.fill(numGrains, {
-            var grainFreq = exprand(400, 6000) * rrand(0.95, 1.05);
+            var grainFreq = freq * exprand(0.5, 4.0) * rrand(0.98, 1.02);
             var pan = rrand(-0.9, 0.9);
             var amp = exprand(0.15, 0.35);
             var bw = exprand(0.1, 0.6);
@@ -380,7 +380,59 @@ SC_PARTS = {
         life = EnvGen.kr(Env([0, 1, 1, 0], [0.002, lifeTail, 0.44]), 1, doneAction: 2);
         Out.ar(out, Pan2.ar(sig * volume * life * 1.35, pan));
     })
+    """,
+
+    "melody_laser": r"""
+    SynthDef(\laserSound, {
+        |out=0, freq=440, volume=0.3, gate=1|
+
+        var pitch;
+        var ampEnv;
+        var filterEnv;
+        var sig;
+
+        // Meow pitch contour
+        pitch = EnvGen.kr(
+            Env(
+                [freq * 0.6, freq * 2.0, freq * 1.1, freq * 0.8],
+                [0.08, 0.18, 0.4],
+                \exp
+            )
+        );
+
+        // Gate-controlled amplitude envelope
+        ampEnv = EnvGen.kr(
+            Env.asr(
+                attackTime: 0.03,
+                sustainLevel: 1.0,
+                releaseTime: 0.6
+            ),
+            gate,
+            doneAction: 2
+        );
+
+        // Filter sweep
+        filterEnv = EnvGen.kr(
+            Env([1800, 3000, 1200], [0.1, 0.6])
+        );
+
+        sig = Mix([
+            VarSaw.ar(pitch, 0, 0.4),
+            Pulse.ar(pitch * 1.005, 0.45)
+        ]);
+
+        sig = RLPF.ar(sig, filterEnv, 0.25);
+
+        sig = sig + PinkNoise.ar(0.02);
+
+        Out.ar(
+            out,
+            Pan2.ar(sig * ampEnv * volume)
+        );
+    });
     """
+
+    
 }
 
 def create_supercollider_synth(s: Session, name: str):

@@ -327,6 +327,7 @@ class ButtonMapper(Pillar_Mapper_Base):
             self.tube_synths += ["lead_synth"] * (self.num_tubes - len(self.tube_synths))
 
     def interaction_update_sound_light(self, old_state, new_state):
+        print(old_state, new_state)
         self.sound_state.clear_reaction_notes()
         if old_state != new_state:
             print(f"[MAPPER][ButtonMapper] state old={old_state} new={new_state}")
