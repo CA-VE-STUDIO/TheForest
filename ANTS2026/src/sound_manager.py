@@ -16,9 +16,7 @@ from sc_synths import *
 
 add_sc_extensions()
 
-# Button-triggered gesture synths (see sc_synths melody_1..4)
-BUTTON_MELODY_SYNTHS = ("melody_1", "melody_2", "melody_3", "melody_4")
-BUTTON_MELODY_PLAY_SECS = 2.8
+MAX_BUTTON_FORKS = 8
 TENTACLES = 6
 
 class InstrumentManager:
@@ -105,7 +103,6 @@ class Composer:
             "melody_speed_multipler": 8.0,
             "pulse_state": {},
             "phase_state": {},
-            "enhance_t": 0
         }
 
         self.active_forks = {
@@ -147,29 +144,12 @@ class Composer:
             if setting_name == "reaction_notes":
                 if len(value) > 0:
                     print(f"[COMPOSER] reaction_notes={value}")
-                for i, note in enumerate(value):
-                    if isinstance(note, dict) and "synth" in note:
-                        # Handle ButtonMapper triggers
-                        print(f"[COMPOSER] dispatch button synth='{note['synth']}'")
-                        # Set a time duration for enhanced synth
-                        self.shared_state["enhance_t"] = 1000
-
-                        # if note['synth'] not in self.button_instruments:
-                        #     if note['synth'] in SC_PARTS:
-                        #         self.button_instruments[note['synth']] = create_supercollider_synth(self.session, note['synth'])
-                        #     else:
-                        #         self.button_instruments[note['synth']] = self.session.new_part(note['synth'])
-
-                        if self.button_forks < 5:
-                            self.session.fork(self.fork_button_synth, args=(self.shared_state,))
-                            self.button_forks += 1
-                    else:
-                        print(f"[COMPOSER] dispatch melody note={note}")
-                        self.session.fork(self.fork_melody_single_note, args=(note,))
+                for note in value:
+                    self.dispatch_reaction_note(note)
             if setting_name == "broadcast_notes":
                 delay = self.state["broadcast"]["echo_delay_duration"]
-                for i, note in enumerate(value):
-                    self.session.fork(self.fork_melody_single_note, args=(note,delay,))
+                for note in value:
+                    self.dispatch_reaction_note(note, delay=delay)
             
             # Play any sounds
             # self.session.fork(self.fork_melody, args=(self.shared_state,))
@@ -202,10 +182,6 @@ class Composer:
         return seprocess.generators.non_repeating_shuffle(notes)
 
     def play(self):
-        # Decrement the count for enhanced synths from button press
-        if self.shared_state["enhance_t"] > 0:
-            self.shared_state["enhance_t"] = max(0,self.shared_state["enhance_t"]-1)
-        
         if not self.auto_start_layers:
             return
         # Start melody/harmony forks on demand (background already running from __init__)
@@ -220,6 +196,26 @@ class Composer:
             print(f"[COMPOSER] Starting fork: {function_name}")
             self.active_forks[function_name] = self.session.fork(function, args=(self.shared_state,))
     
+    def get_button_instrument(self, synth_name):
+        if synth_name not in self.button_instruments:
+            if synth_name in SC_PARTS:
+                self.button_instruments[synth_name] = create_supercollider_synth(self.session, synth_name)
+            elif synth_name in INSTRUMENTS:
+                self.button_instruments[synth_name] = self.session.new_part(synth_name)
+            else:
+                raise ValueError(f"Unknown button synth: {synth_name}")
+        return self.button_instruments[synth_name]
+
+    def dispatch_reaction_note(self, note, delay=0.0):
+        if isinstance(note, dict) and "synth" in note:
+            if self.button_forks >= MAX_BUTTON_FORKS:
+                print(f"[COMPOSER] button fork limit reached, dropping {note['synth']}")
+                return
+            self.button_forks += 1
+            self.session.fork(self.fork_button_synth, args=(note, delay))
+        else:
+            self.session.fork(self.fork_melody_single_note, args=(note, delay))
+
     def fork_melody_single_note(self, note, delay=0.0):
         volume = self.state["volume"]["melody1"]
         instrument = self.instrument_manager.melody1_instrument()
@@ -280,14 +276,22 @@ class Composer:
             # Wait 5-12 seconds between voices
             wait(random.uniform(5.0, 12.0), units="time")
 
-    def fork_button_synth(self, shared_state):
-        instrument = self.instrument_manager.harmony_instrument() #TODO this should be relabelled from harmony...
-        volume = self.state["volume"]["harmony"]
-        while shared_state["enhance_t"] > 0:
-            instrument.play_note(60, volume, 1.0, blocking=False)
-            wait(random.uniform(4.0,8.0), units="time")
-        
-        self.button_forks -= 1
+    def fork_button_synth(self, trigger, delay=0.0):
+        try:
+            if delay > 0:
+                wait(delay)
+            synth_name = trigger["synth"]
+            tube_id = trigger.get("tube_id", 0)
+            volume = self.state["volume"].get("button_melody", 0.45)
+            instr = self.get_button_instrument(synth_name)
+            print(f"[BUTTON] tube={tube_id} synth={synth_name} vol={volume}")
+            play_button_synth(instr, synth_name, tube_id=tube_id, volume=volume, blocking=False)
+            if synth_name in BUTTON_GESTURE_SYNTHS:
+                wait(BUTTON_GESTURE_LENGTH + 0.2, units="time")
+            else:
+                wait(1.2, units="time")
+        finally:
+            self.button_forks -= 1
 
     def fork_background(self, shared_state):
         # Mystic ambient pad cloud - continuous background (matches background.scd)

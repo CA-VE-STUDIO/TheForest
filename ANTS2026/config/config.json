@@ -10,7 +10,7 @@
         "num_tentacles": 5
     },
     "pillars": {
-        "cave002": {
+        "cave003": {
             "id": 1,
             "port": "/dev/ttyACM1",
             "baud_rate": "115200",
@@ -20,10 +20,10 @@
             "map": "ButtonMapper",
             "auto_start_layers": false,
             "tube_synths": [
-                "melody_1",
-                "melody_2",
-                "melody_3",
-                "melody_4"
+                "react_scream",
+                "react_scream",
+                "react_scream_oh",
+                "react_scream_oh"
             ],
             "instruments": {
                 "melody1": "vibrato",
@@ -36,7 +36,7 @@
                 "melody2": 0.1,
                 "harmony": 0.3,
                 "background": 0.015,
-                "button_melody": 0.1
+                "button_melody": 0.5
             },
             "broadcast":{
                 "echo_delay_duration": 4.0
