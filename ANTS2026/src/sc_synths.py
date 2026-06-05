@@ -18,6 +18,17 @@ SC_PARTS = {
     }, [\ir, 0.1, 0.1, 0.1, 0.1, \kr])
     """,
 
+    "trill": r"""    
+    SynthDef(\TrillSynth, { |out=0, freq=440, volume=0.1, vibFreq=10, vibWidth=1, gate=1|
+        var envelope = EnvGen.ar(Env.asr(releaseTime: 0.5), gate, doneAction: 2);
+        var triHalfSteps = LFTri.ar(vibFreq) * vibWidth;
+        var triFreqMul = 2.pow(triHalfSteps / 12);
+        var triSine = SinOsc.ar(freq * triFreqMul) * volume / 10;
+        Out.ar(out, (envelope * triSine) ! 2);
+    }, [\ir, 0.1, 0.1, 0.1, 0.1, \kr])
+
+    """,
+
     "alien_synth": r"""
     SynthDef(\alien, {
         |out=0, freq=200, volume=0.2, gate=1|
@@ -474,6 +485,75 @@ SC_PARTS = {
     })
     """,
 
+    "react_scream": r"""
+    SynthDef(\reactScream, { |out=0, gate=1, volume=0.45, freq=320, vowel=0, dur=1.1|
+        var impact = EnvGen.ar(Env.perc(0.0005, 0.04), gate) * (
+            SinOsc.ar(72) * 0.5 + WhiteNoise.ar * 0.6
+        );
+
+        var pitch = EnvGen.kr(
+            Env([freq * 1.8, freq * 1.1, freq * 0.7], [0.012, dur * 0.18, dur * 0.82], [-10, -6, -4]),
+            gate
+        );
+
+        var chaos = LFNoise1.kr(18).range(0.94, 1.06);
+        var f0 = pitch * chaos;
+
+        var excAh = Mix([
+            Saw.ar(f0) * 0.35,
+            Pulse.ar(f0, 0.15) * 0.15,
+            PinkNoise.ar(0.12)
+        ]);
+        var excOh = Pulse.ar(f0, 0.35) * 0.45 + PinkNoise.ar(0.18);
+        var exc = SelectX.ar(vowel, [excAh, excOh]);
+
+        var f1 = Select.kr(vowel, [900, 430]);
+        var f2 = Select.kr(vowel, [1300, 780]);
+        var f3 = Select.kr(vowel, [2700, 2500]);
+
+        var voice = Mix([
+            Resonz.ar(exc, f1, 0.07) * 7,
+            Resonz.ar(exc, f2, 0.06) * 3,
+            Resonz.ar(exc, f3, 0.09) * 1.2
+        ]);
+
+        var env = EnvGen.kr(Env.perc(0.003, dur, 1, 0.0, \sin), gate, doneAction: 2);
+        var snd = (impact * 0.9 + voice * env) * volume;
+        snd = (snd * 4).tanh;
+
+        Out.ar(out, snd ! 2);
+    }, [\ir, \kr, 0.1, 0.1, 0.1, 0.1, \kr])
+    """,
+
+    "react_scream_oh": r"""
+    SynthDef(\reactScreamOh, { |out=0, gate=1, volume=0.45, freq=280, dur=1.1|
+        var impact = EnvGen.ar(Env.perc(0.0005, 0.04), gate) * (
+            SinOsc.ar(72) * 0.5 + WhiteNoise.ar * 0.6
+        );
+
+        var pitch = EnvGen.kr(
+            Env([freq * 1.8, freq * 1.1, freq * 0.7], [0.012, dur * 0.18, dur * 0.82], [-10, -6, -4]),
+            gate
+        );
+
+        var chaos = LFNoise1.kr(18).range(0.94, 1.06);
+        var f0 = pitch * chaos;
+        var exc = Pulse.ar(f0, 0.35) * 0.45 + PinkNoise.ar(0.18);
+
+        var voice = Mix([
+            Resonz.ar(exc, 430, 0.035) * 4,
+            Resonz.ar(exc, 780, 0.055) * 2.5,
+            Resonz.ar(exc, 2500, 0.08) * 1.2
+        ]);
+
+        var env = EnvGen.kr(Env.perc(0.003, dur, 1, 0.0, \sin), gate, doneAction: 2);
+        var snd = (impact * 0.9 + voice * env) * volume;
+        snd = (snd * 4).tanh;
+
+        Out.ar(out, snd ! 2);
+    }, [\ir, \kr, 0.1, 0.1, 0.1, \kr])
+    """,
+
     "melody_laser": r"""
     SynthDef(\laserSound, {
         |out=0, freq=440, volume=0.3, gate=1|
@@ -527,6 +607,36 @@ SC_PARTS = {
     
 }
 
+BUTTON_SYNTH_PITCHES = [67, 69, 72, 74, 76, 78]
+BUTTON_GESTURE_SYNTHS = frozenset({"melody_1", "melody_2", "melody_3", "melody_4"})
+REACT_SCREAM_SYNTHS = frozenset({"react_scream", "react_scream_oh"})
+BUTTON_ONE_SHOT_LENGTH = 1.0
+BUTTON_GESTURE_LENGTH = 2.8
+
+
 def create_supercollider_synth(s: Session, name: str):
     return s.new_supercollider_part(name, SC_PARTS[name])
-    
+
+
+def play_react_scream(part, pitch=72, volume=0.45, vowel=None, dur=1.1, rand_vowel=False, blocking=False):
+    """One-shot reactive scream via SCAMP. vowel: 0=ah, 1=oh."""
+    props = {"param_dur": dur}
+    if rand_vowel:
+        props["param_vowel"] = random.choice([0, 1])
+    elif vowel is not None:
+        props["param_vowel"] = vowel
+    part.play_note(pitch, volume, BUTTON_ONE_SHOT_LENGTH, props, blocking=blocking)
+
+
+def play_button_synth(part, synth_name, tube_id=0, volume=0.45, blocking=False):
+    """Play a tube-assigned synth (ButtonMapper / reaction_notes)."""
+    pitch = BUTTON_SYNTH_PITCHES[tube_id % len(BUTTON_SYNTH_PITCHES)]
+    if synth_name == "react_scream":
+        play_react_scream(part, pitch=pitch, volume=volume, vowel=tube_id % 2, blocking=blocking)
+    elif synth_name == "react_scream_oh":
+        part.play_note(pitch, volume, BUTTON_ONE_SHOT_LENGTH, blocking=blocking)
+    elif synth_name in BUTTON_GESTURE_SYNTHS:
+        part.play_note(60, volume, BUTTON_GESTURE_LENGTH, blocking=blocking)
+    else:
+        part.play_note(pitch, volume, BUTTON_ONE_SHOT_LENGTH, blocking=blocking)
+
