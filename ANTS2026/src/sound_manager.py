@@ -356,11 +356,8 @@ class Composer:
                     pass
                 elif state > ACC_HARD_MOVE:
                     o.incr_phase(0.4)
-                    print('here2')
                 elif state > ACC_SOFT_MOVE:
                     o.incr_phase(0.1)
-                    print('here')
-                    print(tid)
 
             if shared_state['pulse_state'][tid] == 1: # oscillator fires    
                 # Pick random MIDI note with subtle detune in semitones.
@@ -452,6 +449,9 @@ class SoundManager:
         # Start melody/harmony forks if needed (background always running)
         self.composer.play()
         wait(time_delta, units="time")
+
+    def get_composer_shared_state(self):
+        return self.composer.shared_state
 
 
 if __name__=="__main__":

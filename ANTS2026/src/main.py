@@ -69,11 +69,11 @@ class Controller():
         if self.mqtt_enabled:
             mqttObject = MqttPillarClientMock if config["mqtt"]["mock"] else MqttPillarClient
             self.mqtt_client = mqttObject(
-                broker_host=config["mqtt"]["mqtt_broker_ip"],
+                broker_host=config["mqtt"]["broker_ip"],
                 pillar_id=hostname
             )
             self.mqtt_client.announce_online()
-            self.mqtt_client.on("sound_state/*", self.on_other_pillar_receive)
+            # self.mqtt_client.on("sound_state/*", self.on_other_pillar_receive)
 
     def start(self, frequency):
         """Starts the main control loop
@@ -131,6 +131,10 @@ class Controller():
         # self.esp_manager.read_from_serial_queue()
         tentacle_state = self.esp_manager.get_all_tentacle_status()
         self.sound_manager.composer.trigger_tentacle_reaction(tentacle_state)
+        ss = self.sound_manager.get_composer_shared_state()
+        if "phase_state" in ss:
+            data = "hello"#json.dumps(ss["phase_state"])
+            self.mqtt_client.publish("phase_state", data)
 
         # Send any sound state "reaction notes" to other pillars
         if self.mqtt_enabled:

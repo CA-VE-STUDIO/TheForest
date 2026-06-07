@@ -1,6 +1,6 @@
 {
     "mqtt": {
-        "enable" : false,
+        "enable" : true,
         "broker_ip": "127.0.0.1"
     },
     "esp32": {
