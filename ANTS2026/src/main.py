@@ -73,6 +73,7 @@ class Controller():
                 pillar_id=hostname
             )
             self.mqtt_client.announce_online()
+            self.mqtt_client.connect_and_loop(False)
             # self.mqtt_client.on("sound_state/*", self.on_other_pillar_receive)
 
     def start(self, frequency):
@@ -133,7 +134,7 @@ class Controller():
         self.sound_manager.composer.trigger_tentacle_reaction(tentacle_state)
         ss = self.sound_manager.get_composer_shared_state()
         if "phase_state" in ss:
-            data = "hello"#json.dumps(ss["phase_state"])
+            data = json.dumps(ss["phase_state"])
             self.mqtt_client.publish("phase_state", data)
 
         # Send any sound state "reaction notes" to other pillars

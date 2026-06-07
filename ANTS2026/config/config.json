@@ -36,7 +36,7 @@
             },
             "volume": {
                 "melody1": 0.1,
-                "melody2": 0.05,
+                "melody2": 0.1,
                 "harmony": 0.3,
                 "background": 0.015,
                 "button_melody": 0.1
