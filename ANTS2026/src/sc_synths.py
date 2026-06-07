@@ -522,9 +522,197 @@ SC_PARTS = {
             Pan2.ar(sig * ampEnv * volume)
         );
     });
-    """
+    """,
 
-    
+    "react_scream_sad": r"""
+    SynthDef(\reactOh, {
+        |out=0, gate=1, volume=0.1, freq=180, dur=0.8|
+
+        var pitch, source, voice, env, breath, snd;
+
+        // slight downward speech inflection
+        pitch = EnvGen.kr(
+            Env(
+                [freq * 1.15, freq],
+                [dur],
+                \sin
+            ),
+            gate
+        );
+
+        // voiced source
+        source = (
+            Saw.ar(pitch) * 0.3 +
+            Pulse.ar(pitch, 0.45) * 0.2
+        );
+
+        // subtle breath at onset
+        breath = WhiteNoise.ar(0.02);
+        breath = BPF.ar(breath, 2500, 0.4);
+        breath = breath * EnvGen.ar(
+            Env.perc(0.005, 0.08),
+            gate
+        );
+
+        // "oh" vowel formants
+        voice = Mix([
+            Resonz.ar(source, 450, 0.08) * 4.0,
+            Resonz.ar(source, 900, 0.10) * 2.5,
+            Resonz.ar(source, 2800, 0.12) * 0.8
+        ]);
+
+        env = EnvGen.kr(
+            Env.linen(0.02, dur, 0.15),
+            gate,
+            doneAction: 2
+        );
+
+        snd = (voice + breath) * env;
+
+        // mild saturation only
+        snd = tanh(snd * 1.5);
+
+        snd = snd * volume;
+
+        Out.ar(out, snd ! 2);
+    }).add;
+    """,
+
+    "react_scream_twang": r"""
+    SynthDef(\reactScreamOh, { |out=0, gate=1, volume=0.1, freq=280, dur=1.1|
+        var impact = EnvGen.ar(Env.perc(0.0005, 0.04), gate) * (
+            SinOsc.ar(72) * 0.5 + WhiteNoise.ar * 0.6
+        );
+
+        var pitch = EnvGen.kr(
+            Env([freq * 1.8, freq * 1.1, freq * 0.7], [0.012, dur * 0.18, dur * 0.82], [-10, -6, -4]),
+            gate
+        );
+
+        var chaos = LFNoise1.kr(18).range(0.94, 1.06);
+        var f0 = pitch * chaos;
+        var exc = Pulse.ar(f0, 0.35) * 0.45 + PinkNoise.ar(0.18);
+
+        var voice = Mix([
+            Resonz.ar(exc, 430, 0.035) * 4,
+            Resonz.ar(exc, 780, 0.055) * 2.5,
+            Resonz.ar(exc, 2500, 0.08) * 1.2
+        ]);
+
+        var env = EnvGen.kr(Env.perc(0.003, dur, 1, 0.0, \sin), gate, doneAction: 2);
+        var snd = impact * 0.9 + voice * env;
+        snd = LeakDC.ar(snd);
+        snd = (snd * 2).tanh;   // mild character
+        snd = snd * volume;     // master volume
+        snd = Limiter.ar(snd, 0.95);
+
+        Out.ar(out, snd ! 2);
+    }, [\ir, \kr, 0.1, 0.1, 0.1, \kr])
+    """,
+
+    "react_scream_question": r"""
+    SynthDef(\reactOhQuestion, {
+        |out=0, gate=1, volume=0.1, freq=180, dur=0.8|
+
+        var pitchEnv, pitch, source, voice, env, breath, brightness, vibrato, snd;
+
+        // Rising question inflection
+        pitchEnv = EnvGen.kr(
+            Env(
+                [0, -1, 4],
+                [dur * 0.4, dur * 0.6],
+                \sin
+            ),
+            gate
+        );
+
+        vibrato = SinOsc.kr(6, 0, 0.15);
+
+        pitch = freq * (2.pow((pitchEnv + vibrato) / 12));
+
+        source =
+            Saw.ar(pitch) * 0.25 +
+            Pulse.ar(pitch, 0.45) * 0.15;
+
+        // subtle breath onset
+        breath = WhiteNoise.ar(0.015);
+        breath = BPF.ar(breath, 2500, 0.4);
+        breath = breath * EnvGen.ar(
+            Env.perc(0.005, 0.06),
+            gate
+        );
+
+        // brighten slightly as the question rises
+        brightness = EnvGen.kr(
+            Env([1, 1, 1.4], [dur * 0.4, dur * 0.6]),
+            gate
+        );
+
+        voice = Mix([
+            Resonz.ar(source, 450 * brightness, 0.08) * 4,
+            Resonz.ar(source, 900 * brightness, 0.10) * 2.5,
+            Resonz.ar(source, 2800 * brightness, 0.12) * 0.8
+        ]);
+
+        env = EnvGen.kr(
+            Env.linen(0.02, dur, 0.15),
+            gate,
+            doneAction: 2
+        );
+
+        snd = (voice + breath) * env;
+
+        snd = LeakDC.ar(snd);
+        snd = tanh(snd * 1.3);
+        snd = snd * volume;
+
+        Out.ar(out, snd ! 2);
+    }).add;
+    """,
+
+    "react_scream_ouch": r"""
+    SynthDef(\angryVoice, {
+        |out=0, freq=140, volume=0.2, gate=1, dur=0.4|
+
+        var env, pitchEnv, source, rasp, voice, sig;
+
+        env = EnvGen.kr(
+            Env.perc(0.005, dur, curve: -6),
+            gate,
+            doneAction: 2
+        );
+
+        // Aggressive downward pitch motion
+        pitchEnv = EnvGen.kr(
+            Env([5, 0, -2], [0.05, dur - 0.05]),
+            gate
+        );
+
+        source = Saw.ar(
+            freq * (2.pow(pitchEnv / 12))
+        );
+
+        // Raspy vocal fold noise
+        rasp = PinkNoise.ar(0.15);
+
+        source = source * 0.7 + rasp;
+
+        // Angry "ah" vowel
+        voice = Mix([
+            Resonz.ar(source, 700, 0.08) * 4,
+            Resonz.ar(source, 1200, 0.08) * 2.5,
+            Resonz.ar(source, 2400, 0.12) * 1.2
+        ]);
+
+        // Add vocal strain
+        sig = tanh(voice * 3);
+
+        sig = LPF.ar(sig, 4500);
+
+        Out.ar(out, (sig * env * volume) ! 2);
+    }).add;
+    """,
+
 }
 
 def create_supercollider_synth(s: Session, name: str):

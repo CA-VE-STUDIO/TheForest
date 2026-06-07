@@ -27,13 +27,16 @@
             ],
             "instruments": {
                 "melody1": "vibrato",
-                "melody2": "alien_lang",
+                "melody2": "react_scream_twang",
+                "melody3": "react_scream_sad",
+                "melody4": "react_scream_question",
+                "melody5": "react_scream_ouch",
                 "harmony": "alien_synth",
                 "background": "pad_synth"
             },
             "volume": {
                 "melody1": 0.1,
-                "melody2": 0.1,
+                "melody2": 0.05,
                 "harmony": 0.3,
                 "background": 0.015,
                 "button_melody": 0.1

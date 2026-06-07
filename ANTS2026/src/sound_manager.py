@@ -20,6 +20,9 @@ add_sc_extensions()
 BUTTON_MELODY_SYNTHS = ("melody_1", "melody_2", "melody_3", "melody_4")
 BUTTON_MELODY_PLAY_SECS = 2.8
 TENTACLES = 6
+ACC_SOFT_MOVE = 5
+ACC_HARD_MOVE = 50
+ACC_EXTREME_MOVE = 80
 
 class InstrumentManager:
 
@@ -29,6 +32,9 @@ class InstrumentManager:
         self.instrument_names= {
             "melody1": None,
             "melody2": None,
+            "melody3": None,
+            "melody4": None,
+            "melody5": None,
             "harmony": None,
             "background": None
         }
@@ -36,6 +42,9 @@ class InstrumentManager:
         self.instruments = {
             "melody1": None,
             "melody2": None,
+            "melody3": None,
+            "melody4": None,
+            "melody5": None,
             "harmony": None,
             "background": None
         }
@@ -68,9 +77,16 @@ class InstrumentManager:
     def melody1_instrument(self):
         return self.instruments["melody1"]
 
-    def melody2_instrument(self):
-        return self.instruments["melody2"]
-
+    def melody2_instrument(self, tid):
+        if tid == 1:
+            return self.instruments["melody2"]
+        if tid == 2:
+            return self.instruments["melody3"]
+        if tid == 3:
+            return self.instruments["melody4"]
+        
+        return self.instruments["melody5"]
+    
     def harmony_instrument(self):
         return self.instruments["harmony"]
 
@@ -105,7 +121,8 @@ class Composer:
             "melody_speed_multipler": 8.0,
             "pulse_state": {},
             "phase_state": {},
-            "enhance_t": 0
+            "enhance_t": 0,
+            "tentacle_state": []
         }
 
         self.active_forks = {
@@ -186,9 +203,10 @@ class Composer:
         self.shared_state["chord_levels"].value += level
 
     def trigger_tentacle_reaction(self, tentacle_state):
+        self.shared_state["tentacle_state"] = tentacle_state
         for tid, v in enumerate(tentacle_state):
             # Only trigger if a fork is not currently active and if value is above threshold
-            if (tid not in self.active_forks or self.active_forks[tid] is False) and v > 5:
+            if (tid not in self.active_forks or self.active_forks[tid] is False) and v > ACC_SOFT_MOVE:
                 self.active_forks[tid] = True
                 self.session.fork(self.fork_beep_boop_synth, args=(tid,v,))
 
@@ -236,6 +254,7 @@ class Composer:
     def fork_beep_boop_synth(self, tentacle_id, value):
         # Reuse one SCAMP part per button synth to avoid churn.
         print(f"Tentacle Synth Triggered: {tentacle_id}")
+        # return
         # if synth_name not in self.button_instruments:
         #     if synth_name in SC_PARTS:
         #         self.button_instruments[synth_name] = create_supercollider_synth(self.session, synth_name)
@@ -243,7 +262,8 @@ class Composer:
         #         self.button_instruments[synth_name] = self.session.new_part(synth_name)
 
         # instr = self.button_instruments[synth_name]
-        instr = self.instrument_manager.melody2_instrument()
+        # if tentacle_id 
+        instr = self.instrument_manager.melody2_instrument(tentacle_id)
         # if synth_name in BUTTON_MELODY_SYNTHS:
         #     volume = self.state["volume"].get(
         #         "button_melody",
@@ -251,8 +271,14 @@ class Composer:
         #     )
         #     length = BUTTON_MELODY_PLAY_SECS
         # else:
-        volume = self.state["volume"]["melody2"]
+        if value < ACC_HARD_MOVE:
+            volume = self.state["volume"]["melody2"]*0.2
+        elif value < ACC_EXTREME_MOVE:
+            volume = self.state["volume"]["melody2"]*1.5
+        else:
+            volume = self.state["volume"]["melody2"]*2.5
         length = 1.0
+        print(volume, value)
         
         pitch = [45, 52, 59, 65, 70]
         # Pitch 60 = middle C; gestures use internal Demand/Dseq for real notes.
@@ -311,7 +337,6 @@ class Composer:
         phase = random.uniform(0.1, 0.9)
         o = Oscillator(tid, phase_0=phase, phase_d=0.05, alpha=0.015)
         shared_state['pulse_state'][tid] = 0
-        shared_state['phase_state'][tid] = 0
         
         # Mystic ambient pad cloud - continuous background (matches background.scd)
         print(f"[TENTACLE {tid}] Tentacle fork started")
@@ -322,6 +347,20 @@ class Composer:
 
         while True:
             o.step(shared_state['pulse_state'], shared_state['phase_state'])
+            
+            if len(shared_state["tentacle_state"]) > tid-1:
+                state_idx = tid-1
+                state = shared_state["tentacle_state"][state_idx]
+                # print(">>>>>>>>>>>>>>>>>> ", tid, state)
+                if state > ACC_EXTREME_MOVE:
+                    pass
+                elif state > ACC_HARD_MOVE:
+                    o.incr_phase(0.4)
+                    print('here2')
+                elif state > ACC_SOFT_MOVE:
+                    o.incr_phase(0.1)
+                    print('here')
+                    print(tid)
 
             if shared_state['pulse_state'][tid] == 1: # oscillator fires    
                 # Pick random MIDI note with subtle detune in semitones.
@@ -349,6 +388,7 @@ class Oscillator:
         self.alpha = alpha # coupling strength
         self.t_ref = t_ref # refactory period
         self.wait = 0
+        self.wait_perturb = 0 # time to wait after perturbation
         self.count = 0
 
     # Increases activation
@@ -377,6 +417,14 @@ class Oscillator:
     def detect_pulse(self, pulse_state):
         no_pulses = sum(pulse_state.values())
         self.phase += no_pulses*self.alpha
+
+    def incr_phase(self, incr):
+        if self.wait_perturb > 0:
+            self.wait_perturb -= 1
+            return
+
+        self.phase += incr
+        self.wait_perturb = 10
 
 
 class SoundManager:

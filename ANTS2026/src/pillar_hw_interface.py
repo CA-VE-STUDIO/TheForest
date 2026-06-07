@@ -243,6 +243,7 @@ class Tentacle(SerialManager):
                 tid = int(r_[0])
                 val = int(r_[1])
                 self.tentacle_status[tid] = val
+                # print(">>>>>>>>>>>>> ", tid, val)
                 
                 # data_queue.put(self.tentacle_status)
 
